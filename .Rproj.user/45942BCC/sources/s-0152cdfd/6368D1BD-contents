@@ -1,0 +1,130 @@
+---
+title: "Bank Customers Churn Prediction"
+output: 
+    flexdashboard::flex_dashboard:
+        orientation: columns
+---
+
+
+# Modeling
+```{r}
+library(ggplot2)
+library(plotly)
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(gt)
+library(xgboost)
+library(pROC)
+library(MLmetrics)
+library(SHAPforxgboost)
+
+D1 <- read.csv("data/Churn Modeling.csv")
+```
+
+
+## Column
+
+<a href="https://www.kaggle.com/datasets/santoshd3/bank-customers?resource=download">Data source.</a>
+
+### Train-test split
+```{r}
+set.seed(678)
+N = nrow(D1)
+train_idx <- sample(N, N*0.8)
+D_train = D1[train_idx, ]
+D_test = D1[-train_idx, ]
+
+r1 = table(D_train$Exited) %>% as.data.frame() %>%
+    mutate(split = 'Train')
+r2 = table(D_test$Exited) %>% as.data.frame() %>%
+    mutate(split = 'Test')
+res <- rbind(r1, r2) %>% rename(Exited=Var1) %>%
+    group_by(split) %>%
+    mutate(value = paste0(format(Freq, big.mark=','), 
+                          ' (', round(100*Freq/sum(Freq),1), '%)')) %>%
+    pivot_wider(id_cols = split, names_from = Exited, 
+                names_prefix = 'exited=', values_from = value)
+
+gt(res)
+```
+
+
+### Modeling by Catboost
+```{r, echo=TRUE, message = FALSE}
+X <- D_train %>%
+    select(-RowNumber, -CustomerId, -Exited)
+
+M1 <- xgboost(data = data.matrix(X), 
+              label = D_train$Exited, 
+              max.depth = 6, eta = 0.1, nrounds = 250, 
+              nthread = 6, objective =  "binary:logistic",
+              verbose = 0)
+```
+
+## Column
+
+### AUC - ROC (of training dataset)
+```{r}
+pred1 <- predict(M1, data.matrix(X))
+rocobj <- plot.roc(D_train$Exited, pred1,
+                   main = "Confidence intervals", 
+                   percent=TRUE,
+                   ci = TRUE,                  # compute AUC (of AUC by default)
+                   print.auc = TRUE)           # print the AUC (will contain the CI)
+ciobj <- ci.se(rocobj,                         # CI of sensitivity
+               specificities = seq(0, 100, 5)) # over a select set of specificities
+plot(ciobj, type = "shape", col = "#1c61b6AA")     # plot as a blue shape
+CI1 = ci(rocobj, of = "thresholds", thresholds = "best")
+plot(CI1) # add one threshold
+
+threshold1 = coords(rocobj, "best", "threshold")
+```
+
+
+### AUC - ROC (of testing dataset)
+```{r}
+X_test <- D_test %>%
+    select(-RowNumber, -CustomerId, -Exited)
+pred2 <- predict(M1, data.matrix(X_test))
+
+rocobj <- plot.roc(D_test$Exited, pred2,
+                   main = "Confidence intervals", 
+                   percent=TRUE,
+                   ci = TRUE,                  # compute AUC (of AUC by default)
+                   print.auc = TRUE)           # print the AUC (will contain the CI)
+ciobj <- ci.se(rocobj,                         # CI of sensitivity
+               specificities = seq(0, 100, 5)) # over a select set of specificities
+plot(ciobj, type = "shape", col = "#1c61b6AA")     # plot as a blue shape
+plot(ci(rocobj, of = "thresholds", thresholds = "best")) # add one threshold
+
+```
+
+
+
+### Metrics of testing dataset {data-height=200}
+set threshold=`r round(threshold1$threshold,3)`
+```{r}
+pred2b = as.numeric(pred2 > threshold1$threshold)
+res <- data.frame(
+    accuracy = Accuracy(pred2b, D_test$Exited),
+    recall = Recall(pred2b, D_test$Exited),
+    precision = Precision(pred2b, D_test$Exited)
+) %>%
+    mutate_if(is.numeric, funs(paste0(round(100*., 2), '%')))
+
+gt(res)
+```
+
+
+
+# Feature Importance
+by SHAP values
+
+```{r}
+shap_long <- shap.prep(xgb_model = M1, 
+                       X_train = data.matrix(X))
+# **SHAP summary plot**
+shap.plot.summary(shap_long)
+```
+

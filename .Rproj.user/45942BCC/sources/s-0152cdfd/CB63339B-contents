@@ -1,0 +1,255 @@
+---
+title: "Global Sales Report"
+output:
+    flexdashboard::flex_dashboard:
+        orientation: rows
+        theme: 
+            version: 4
+            bootswatch: minty
+---
+
+```{r}
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(rgdal)
+library(flexdashboard)
+library(leaflet)
+library(RColorBrewer)
+library(scales)
+library(reactable)
+```
+
+```{css}
+.value-box .value{
+    font-size: 16px;
+}
+```
+
+# Sales Overview
+```{r}
+# data source
+# https://www.kaggle.com/datasets/carrie1/ecommerce-data?resource=download
+D1 <- read.csv('data/e-commerce-data.csv',
+               stringsAsFactors = FALSE)
+
+D1b <- D1 %>%
+    mutate(date = as.Date(InvoiceDate, format='%m/%d/%Y'),
+           Sale = Quantity*UnitPrice)
+```
+
+## Row {data-height=100}
+
+### Period
+```{r}
+dd_range = range(D1b$date) %>%
+    paste0(collapse = ' ~ ')
+valueBox(dd_range, icon = 'fa-calendar')
+```
+
+### Number of Countries
+```{r}
+valueBox(n_distinct(D1$Country), icon = 'fa-earth-americas')
+```
+
+### Number of Customers
+```{r}
+v1 = n_distinct(D1$CustomerID) %>% format(big.mark=',')
+valueBox(v1, icon = 'fa-people-group')
+```
+
+### Total Orders
+```{r}
+v1 = n_distinct(D1$InvoiceNo) %>% format(big.mark=',')
+valueBox(v1, icon = 'fa-file-invoice-dollar')
+```
+
+### Total Items
+```{r}
+v1 = sum(D1$Quantity) %>% format(big.mark=',')
+valueBox(v1)
+```
+
+### Total Sale
+```{r}
+v1 = round(sum(D1b$Sale)) %>% format(big.mark=',')
+valueBox(v1, icon = 'fa-money-check-dollar')
+```
+
+
+
+## Row
+### Sales Map
+```{r}
+S_country <- D1b %>%
+    group_by(Country) %>%
+    summarise(
+        n_customer = n_distinct(CustomerID),
+        Sale = round(sum(Sale))
+    ) %>%
+    arrange(desc(Sale)) %>%
+    mutate(
+        Country = case_when(
+            Country=='USA' ~ "United States of America",
+            Country=='RSA' ~ "Russia",
+            Country=='EIRE' ~ "Ireland",
+            Country=='Channel Islands' ~ "Jersey",
+            TRUE ~ Country
+        )
+    )
+
+# plot map
+    # data souce = https://www.naturalearthdata.com/
+world <-readOGR("./data/ne_50m_admin_0_countries",
+                'ne_50m_admin_0_countries', verbose = FALSE)
+
+
+world_sales <- merge(world, S_country, by.x="NAME", by.y ="Country")
+
+popup_msg <- paste(
+    "Country: ", world_sales$NAME,"<br/>", 
+    "#Customer: ", world_sales$n_customer, "<br/>", 
+    "Sale: ", format(world_sales$Sale, big.mark=','), 
+    sep="") %>%
+    lapply(htmltools::HTML)
+
+# define pallette
+dom = na.omit(world_sales$Sale)
+monPal <- colorNumeric("RdYlGn", domain =c(0,max(dom)), n=20)
+
+mybins <- c(quantile(S_country$Sale, seq(0.1, 0.9, 0.1)), Inf)
+mypalette <- colorBin( palette="YlOrBr", 
+                       domain = world_sales$Sale, 
+                       na.color="transparent", bins=mybins)
+
+leaflet(world) %>%
+    addTiles(options=tileOptions(opacity=0.6)) %>%
+    setView(lng = 20, lat = 15, zoom = 2) %>%
+    addPolygons(fillOpacity = 0.6,
+                fillColor = ~mypalette(world_sales$Sale),
+                color = "white",
+                weight = 1,
+                opacity=1,
+                dashArray = "",
+                popup = popup_msg) 
+```
+
+
+
+
+***
+<a href="https://www.kaggle.com/datasets/carrie1/ecommerce-data?resource=download">Data source.</a>
+
+
+# Statistics
+
+## Row
+### Monthly Sales
+```{r}
+C1 <- S_country %>%
+    arrange(desc(Sale)) %>%
+    head(5) 
+
+
+M1 <- D1b %>%
+    dplyr::mutate(YYMM = format(date, "%Y-%m")) %>%
+    left_join(C1) %>%
+    dplyr::mutate(Country = 
+            ifelse(Country %in% C1$Country, Country, 'other')) %>%
+    dplyr::group_by(YYMM, Country) %>%
+    dplyr::summarize(
+        total_Sale = sum(Sale)
+    )
+
+p1 = ggplot(M1, aes(fill=Country, y=total_Sale, x=YYMM)) + 
+    geom_bar(position="stack", stat="identity") +
+    theme(axis.text.x = element_text(angle = 90)) +
+    scale_y_continuous(labels = comma)
+ggplotly(p1)
+```
+
+
+### Average Sale per Customer
+```{r}
+S_avg <- D1b %>%
+    dplyr::group_by(Country) %>%
+    dplyr::summarise(
+        n_customer = n_distinct(CustomerID),
+        avg_sale = round(mean(Sale), 1)
+    ) %>%
+    arrange(desc(avg_sale)) %>%
+    mutate(Country2 = sprintf("%02d_%s",row_number(), Country))
+
+p1 = ggplot(S_avg, aes(y=avg_sale, x=Country2, 
+                       group='A')) + 
+    geom_line() + geom_point() +
+    theme(axis.text.x = element_text(angle = 90))
+ggplotly(p1) 
+
+```
+
+## Row
+### Purchase Interval
+```{r}
+PI1 <- D1b %>%
+    mutate(timestamp = strptime(InvoiceDate, "%m/%d/%Y %H:%M")) %>%
+    group_by(CustomerID) %>%
+    arrange(timestamp) %>%
+    mutate(interval = difftime(timestamp, lag(timestamp), units = 'day'),
+           interval = as.numeric(interval)) %>%
+    filter(!is.na(interval), interval>0.1)
+
+C1_repurchase <- PI1 %>%
+    group_by(CustomerID) %>%
+    dplyr::summarise(
+        n_purchase = n()
+    ) %>% ungroup() %>%
+    mutate(rank = ntile(n_purchase, 7)) 
+
+label1 <- C1_repurchase %>%
+    group_by(rank) %>%
+    summarise(range = paste0(min(n_purchase), ' ~ ', max(n_purchase)))
+
+PI2 <- PI1 %>% 
+    left_join(C1_repurchase) %>% 
+    left_join(label1) %>%
+    filter(range != '1 ~ 1')
+
+p1 = ggplot(PI2, 
+            aes(y=interval, x=range, 
+                       group='A')) + 
+    geom_boxplot() +
+    xlab('Repurchase times') +
+    ylab('Interval (days)') +
+    theme(axis.text.x = element_text(angle = 90))
+ggplotly(p1) 
+
+```
+
+
+### Top 20 Products
+```{r}
+P_topK <- D1b %>%
+    group_by(Description) %>%
+    summarise(Sale = sum(Sale)) %>%
+    arrange(desc(Sale)) %>% head(20)
+
+P1_country <- D1b %>%
+    inner_join(P_topK %>% select(Description)) %>%
+    group_by(Product=Description, Country) %>%
+    summarise(
+        n_buyers = n_distinct(CustomerID),
+        Sale = round(sum(Sale)), 
+        .groups = 'drop')
+
+reactable(P1_country,
+  groupBy = "Product", defaultSorted = list(Sale = 'desc'),
+  columns = list(
+    Sale = colDef(aggregate = "sum",
+                  format = colFormat(separators = TRUE, digits = 0))
+  )
+)
+```
+
+

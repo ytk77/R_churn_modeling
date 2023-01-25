@@ -1,0 +1,8 @@
+"0","X <- D_train %>%"
+"0","    select(-RowNumber, -CustomerId, -Exited)"
+"0",""
+"0","M1 <- xgboost(data = data.matrix(X), "
+"0","               label = D_train$Exited, "
+"0","               max.depth = 2, eta = 0.1, nrounds = 200, "
+"0","               nthread = 4, objective =  ""binary:logistic"","
+"0","              verbose = 0)"

@@ -1,0 +1,57 @@
+---
+title: "Bank Customers Churn Dataset"
+output: 
+    flexdashboard::flex_dashboard:
+        orientation: columns
+---
+
+
+# Explore Data
+```{r}
+library(GGally)
+library(ggplot2)
+library(plotly)
+library(plyr)
+library(dplyr)
+library(DataExplorer)
+library(gt)
+
+D1 <- read.csv("data/Churn Modeling.csv") %>%
+    mutate(Exited = factor(Exited))
+```
+
+
+## Column
+
+<a href="https://www.kaggle.com/datasets/santoshd3/bank-customers?resource=download">Data source.</a>
+
+### Data
+```{r}
+I1 = introduce(D1) %>% t() %>%
+    head(7) %>% as.data.frame() %>%
+    mutate_if(is.numeric, format, big.mark = ",")
+r1 = data.frame(
+    attr = rownames(I1),
+    value = I1
+)
+gt(r1)
+```
+
+
+### Categorigal columns
+```{r}
+plot_bar(D1, by='Exited')
+```
+
+
+## Column
+### Numerical columns
+```{r}
+ggpairs(D1, 
+        columns=c(4, 7, 8, 9, 10, 13),
+        mapping=aes(color=Exited)) +
+    theme(
+        text = element_text(size=8),
+        axis.text.x = element_text(angle = 90)) 
+```
+

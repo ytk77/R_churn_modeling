@@ -1,0 +1,22 @@
+
+
+#install.packages("GGally")
+library(GGally)
+library(plyr)
+library(dplyr)
+library(DataExplorer)
+
+D1 <- read.csv("data/Churn Modeling.csv")
+D1 <- D1 %>%
+    mutate(Exited = factor(Exited))
+
+introduce(D1) %>% t()
+
+plot_intro(D1)
+
+plot_bar(D1, by='Exited')
+
+ggpairs(D1, 
+        columns=c(4, 7, 8, 9, 10, 13),
+        mapping=aes(color=Exited)) +
+    theme(axis.text.x = element_text(angle = 90)) 

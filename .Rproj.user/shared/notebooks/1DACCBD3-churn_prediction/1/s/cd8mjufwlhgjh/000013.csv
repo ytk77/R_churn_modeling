@@ -1,0 +1,4 @@
+"0","shap_long <- shap.prep(xgb_model = M1, "
+"0","                       X_train = data.matrix(X))"
+"0","# **SHAP summary plot**"
+"0","shap.plot.summary(shap_long)"
