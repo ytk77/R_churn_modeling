@@ -6,4 +6,4 @@ Preview the [EDA here.](https://rpubs.com/ytk77/churn_dataset_EDA)
 
 Since the columns are already sufficient being features. Feature engineering (which is usually the mostly laborious step of modeling) is not conducted here.
 
-Preview the R code of [XGBoost model here.](https://rpubs.com/ytk77/churn_prediction_demo)
+Preview the modeling method and results [here.](https://rpubs.com/ytk77/churn_prediction_demo)
